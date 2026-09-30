@@ -10,6 +10,44 @@ const {
 } = require('../auth');
 const { exigirSesion, exigirAdmin } = require('../middleware/auth');
 
+/**
+ * POST /api/auth/setup-admin  { password }
+ *
+ * Endpoint temporal de una sola vez para inicializar la contraseña del
+ * administrador (admin@coopelesca.co.cr) recién creado en la base de datos,
+ * que aún no tiene clave definida (hash = NULL, temporal = true).
+ *
+ * IMPORTANTE: una vez usado con éxito, este endpoint debe eliminarse del
+ * código (o deshabilitarse) por seguridad — no debe quedar disponible en
+ * producción.
+ */
+router.post('/setup-admin', async (req, res) => {
+  try {
+    const correoAdmin = 'admin@coopelesca.co.cr';
+    const password = req.body.password || '';
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+    }
+
+    const hash = await hashClave(password);
+    const { rowCount } = await query(
+      `UPDATE usuarios
+         SET hash = $1, temporal = false,
+             token_temporal_hash = NULL, token_temporal_vence = NULL
+       WHERE correo = $2`,
+      [hash, correoAdmin]
+    );
+
+    if (!rowCount) {
+      return res.status(404).json({ error: 'No existe el usuario administrador.' });
+    }
+
+    res.json({ ok: true, mensaje: 'Contraseña de administrador establecida correctamente.' });
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudo establecer la contraseña del administrador.' });
+  }
+});
+
 /** POST /api/auth/login  { correo, clave } */
 router.post('/login', async (req, res) => {
   const correo = normalizarCorreo(req.body.correo);
